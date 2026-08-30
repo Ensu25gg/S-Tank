@@ -674,14 +674,17 @@ function update() {
         }
       }
     }
-  });
-
-  if (enemies.length === 0) {
-    if (state.wave < 3) { state.wave++; startWave(); }
-    else { openShop(); }
+    if (enemies.length === 0) {
+    if (state.wave < 3) { 
+      state.wave++; 
+      startWave(); 
+    } else { 
+      // Ensure game stops running loop properly and opens the shop
+      state.running = false;
+      openShop(); 
+    }
   }
-}
-</script>
+    </script>
 <script>
 function render() {
   ctx.clearRect(0, 0, W, H);
