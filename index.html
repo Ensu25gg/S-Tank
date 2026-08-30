@@ -64,6 +64,48 @@
     .gadget-item span { font-size: 9px; font-weight: bold; }
   </style>
 </head>
+  <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Tank Game</title>
+  
+  <!-- Link your PWA manifest -->
+  <link rel="manifest" href="manifest.json">
+  
+  <!-- Theme color for mobile browsers -->
+  <meta name="theme-color" content="#1a202c">
+  
+  <!-- Favicon / App Icon -->
+  <link rel="icon" href="icon.png" type="image/png">
+
+  <!-- Basic styling to make the game fill the screen nicely without scrolling -->
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #1a202c;
+      color: #fff;
+      font-family: sans-serif;
+      overflow: hidden;
+      touch-action: none;
+    }
+    canvas {
+      display: block;
+      margin: 0 auto;
+    }
+  </style>
+
+  <!-- Service Worker Registration Script -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js')
+          .then(reg => console.log('Service Worker registered! 😎', reg))
+          .catch(err => console.log('Service Worker registration failed 😢', err));
+      });
+    }
+  </script>
+  </head>
 <body>
 
 <div id="game-wrapper">
