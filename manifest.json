@@ -1,16 +1,9 @@
 {
-  "name": "WWII NAZI GERMANY",
-  "short_name": "NAZI GERMANY",
-  "start_url": ".",
+  "name": "EASTERN FRONT",
+  "short_name": "WWII",
+  "start_url": "./index.html",
   "display": "fullscreen",
-  "orientation": "landscape",
-  "background_color": "#1a202c",
-  "theme_color": "#1a202c",
-  "icons": [
-    {
-      "src": "icon.png",
-      "sizes": "192x192",
-      "type": "image/png"
-    }
-  ]
+  "background_color": "#2b2b2b",
+  "theme_color": "#2b2b2b",
+  "icons": []
 }
