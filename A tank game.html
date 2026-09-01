@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>25v15 Tank Warfare: Germany vs USSR</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #2b2b2b;
+            font-family: sans-serif;
+            touch-action: none;
+        }
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-size: 14px;
+            text-shadow: 1px 1px 2px black;
+            pointer-events: none;
+            z-index: 6;
+        }
+        #menu, #tankMenu {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.85);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            z-index: 10;
+        }
+        #tankMenu { display: none; z-index: 12; }
+        .btn {
+            padding: 12px 24px;
+            margin: 8px;
+            font-size: 18px;
+            font-weight: bold;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            color: white;
+        }
+        .btn-ger { background: #555; }
+        .btn-ussr { background: #235c23; }
+        .locked { opacity: 0.4; cursor: not-allowed; }
+        
+        #settingsBtn {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            width: 45px;
+            height: 45px;
+            background: rgba(0,0,0,0.6);
+            border: 2px solid white;
+            border-radius: 50%;
+            color: white;
+            font-size: 22px;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            z-index: 8;
+        }
+
+        .joystick {
+            position: absolute;
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.1);
+            border: 2px solid rgba(255,255,255,0.3);
+            display: none;
+            touch-action: none;
+            z-index: 5;
+        }
+        .joystick-knob {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.4);
+            top: 35px;
+            left: 35px;
+        }
+        #fireBtn {
+            position: absolute;
+            right: 80px;
+            bottom: 120px;
+            width: 90px;
+            height: 90px;
+            background: rgba(200, 0, 0, 0.6);
+            border: 3px solid rgba(255, 255, 255, 0.6);
+            border-radius: 50%;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-weight: bold;
+            font-size: 18px;
+            z-index: 7;
+            touch-action: none;
+            user-select: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="menu">
+        <h1>25v15 Tank Warfare 🎖️</h1>
+        <p>Choose Your Faction: 🌍</p>
+        <div>
+            <button class="btn btn-ger" onclick="initFaction('GER')">Germany (Gray) 🇩🇪</button>
+            <button class="btn btn-ussr" onclick="initFaction('USSR')">USSR (Green) 🇷🇺</button>
+        </div>
+    </div>
+
+    <div id="tankMenu">
+        <h2>Tank Selection Menu 🛠️</h2>
+        <p>Choose Your Active Tank Model: 📋</p>
+        <div id="tankOptionsList"></div>
+        <button class="btn btn-ger" onclick="toggleTankMenu(false)" style="margin-top: 20px;">Resume Battle ⚔️</button>
+    </div>
+
+    <div id="settingsBtn" onclick="toggleTankMenu(true)">⚙️</div>
+
+    <div id="ui">
+        Score - GER: <span id="gerScore">0</span> | USSR: <span id="ussrScore">0</span> 📊<br>
+        Base HP - GER: <span id="gerBaseHp">2000</span> | USSR: <span id="ussrBaseHp">800</span> 🏰<br>
+        <span id="playerStats">HP: 100 | Armor: 50 | Ammo: 30</span> 🕹️
+    </div>
+
+    <div id="leftJoystick" class="joystick"><div class="joystick-knob" id="leftKnob"></div></div>
+    <div id="rightJoystick" class="joystick"><div class="joystick-knob" id="rightKnob"></div></div>
+    <div id="fireBtn">FIRE 🔥</div>
+
+    <canvas id="gameCanvas"></canvas>
+    <script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+const WORLD_WIDTH = 4000;
+const WORLD_HEIGHT = 4000;
+
+let gameStarted = false;
+let playerFaction = 'GER';
+let playerTankModel = 'tier1';
+let playerKills = 0;
+let ussrReinforcementsTriggered = false;
+
+let tanks = [];
+let bullets = [];
+let bases = [];
+let obstacles = [];
+let camera = { x: 0, y: 0 };
+let firePressed = false;
+
+let gerScore = 0;
+let ussrScore = 0;
+
+const tankSpecs = {
+    GER: {
+        tier1: { tierLevel: 1, name: 'Panzer II', hp: 70, armor: 30, dmg: 33, speed: 2.8, reload: 1000, range: 350, radius: 18, color: '#6e6e6e', turretColor: '#888', turretSpeed: 0.15 },
+        tier2: { tierLevel: 2, name: 'Panther IV', hp: 140, armor: 80, dmg: 60, speed: 2.2, reload: 4500, range: 480, radius: 22, color: '#636355', turretColor: '#7a7a6b', turretSpeed: 0.05 },
+        tier3: { tierLevel: 3, name: 'Tiger I', hp: 220, armor: 130, dmg: 150, speed: 1.4, reload: 7000, range: 600, radius: 26, color: '#545454', turretColor: '#6e6e6e', turretSpeed: 0.025 }
+    },
+    USSR: {
+        tier1: { tierLevel: 1, name: 'T-26', hp: 60, armor: 20, dmg: 33, speed: 3.0, reload: 900, range: 350, radius: 17, color: '#3b5c3b', turretColor: '#4d754d', turretSpeed: 0.15 },
+        tier2: { tierLevel: 2, name: 'T-34-76', hp: 110, armor: 50, dmg: 100, speed: 2.6, reload: 3000, range: 480, radius: 20, color: '#2d4c2d', turretColor: '#3d633d', turretSpeed: 0.12 },
+        tier3: { tierLevel: 3, name: 'IS-2', hp: 190, armor: 110, dmg: 110, speed: 1.7, reload: 4500, range: 540, radius: 25, color: '#233d23', turretColor: '#305230', turretSpeed: 0.06 }
+    }
+};
+
+function isPathBlocked(x1, y1, x2, y2) {
+    for (let obs of obstacles) {
+        let dx = x2 - x1;
+        let dy = y2 - y1;
+        let len = Math.hypot(dx, dy);
+        if (len === 0) continue;
+        let u = ((obs.x - x1) * dx + (obs.y - y1) * dy) / (len * len);
+        u = Math.max(0, Math.min(1, u));
+        let nearestX = x1 + u * dx;
+        let nearestY = y1 + u * dy;
+        if (Math.hypot(obs.x - nearestX, obs.y - nearestY) < obs.radius + 10) return true;
+    }
+    return false;
+}
+
+class Obstacle {
+    constructor(x, y, radius, type) {
+        this.x = x;
+        this.y = y;
+        this.radius = radius;
+        this.type = type;
+    }
+    draw() {
+        ctx.fillStyle = this.type === 'rock' ? '#555' : '#2d4c1e';
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = '#1a1a1a';
+        ctx.stroke();
+
+        if (this.type === 'tree') {
+            ctx.fillStyle = '#3d6328';
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.radius * 0.6, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+}
+
+class Base {
+    constructor(x, y, faction) {
+        this.x = x;
+        this.y = y;
+        this.faction = faction;
+        this.hp = faction === 'GER' ? 2000 : 800;
+        this.maxHp = faction === 'GER' ? 2000 : 800;
+        this.width = 140;
+        this.height = 1200;
+    }
+    draw() {
+        ctx.fillStyle = this.faction === 'GER' ? '#777' : '#2f5e2f';
+        ctx.fillRect(this.x - this.width/2, this.y - this.height/2, this.width, this.height);
+        ctx.lineWidth = 5;
+        ctx.strokeStyle = '#111';
+        ctx.strokeRect(this.x - this.width/2, this.y - this.height/2, this.width, this.height);
+
+        ctx.fillStyle = 'red';
+        ctx.fillRect(this.x - 50, this.y - this.height/2 - 25, 100, 10);
+        ctx.fillStyle = 'lime';
+        ctx.fillRect(this.x - 50, this.y - this.height/2 - 25, 100 * (this.hp / this.maxHp), 10);
+    }
+}
+
+class Tank {
+    constructor(faction, isPlayer = false, x, y, tier = 'tier1') {
+        this.faction = faction;
+        this.isPlayer = isPlayer;
+        this.x = x;
+        this.y = y;
+        this.tier = tier;
+        
+        let stats = tankSpecs[faction][tier];
+        this.updateStats(stats);
+
+        this.angle = faction === 'GER' ? 0 : Math.PI;
+        this.turretAngle = this.angle;
+        this.ammo = 30;
+        this.maxAmmo = 30;
+        
+        this.lastDmgTime = Date.now();
+        this.lastShotTime = 0;
+        this.shootCooldown = this.reloadTime + Math.random() * 800;
+        
+        this.isDead = false;
+        this.retreating = false;
+        this.safeTargetX = null;
+        this.safeTargetY = null;
+    }
+
+    respawn() {
+        const base = bases.find(b => b.faction === this.faction);
+        this.x = base.x + (Math.random() - 0.5) * (base.width - 40);
+        this.y = base.y + (Math.random() - 0.5) * (base.height - 40);
+        
+        if (this.isPlayer) {
+            let stats = tankSpecs[this.faction][playerTankModel];
+            this.tier = playerTankModel;
+            this.updateStats(stats);
+        } else {
+            let rand = Math.random();
+            let chosenTier = 'tier1';
+            
+            if (this.faction === 'GER') {
+                if (rand < 0.45) chosenTier = 'tier3';
+                else if (rand < 0.80) chosenTier = 'tier2';
+            } else {
+                if (playerKills >= 6 && rand < 0.2) chosenTier = 'tier3';
+                else if (playerKills >= 2 && rand < 0.45) chosenTier = 'tier2';
+            }
+            
+            this.tier = chosenTier;
+            this.updateStats(tankSpecs[this.faction][chosenTier]);
+        }
+
+        this.hp = this.maxHp;
+        this.armor = this.maxArmor;
+        this.ammo = 30;
+        this.isDead = false;
+        this.retreating = false;
+        this.lastDmgTime = Date.now();
+    }
+
+    updateStats(stats) {
+        this.name = stats.name;
+        this.tierLevel = stats.tierLevel;
+        this.hp = stats.hp;
+        this.maxHp = stats.hp;
+        this.armor = stats.armor;
+        this.maxArmor = stats.armor;
+        this.dmg = stats.dmg;
+        this.speed = stats.speed;
+        this.reloadTime = stats.reload;
+        this.range = stats.range;
+        this.radius = stats.radius;
+        this.color = stats.color;
+        this.turretColor = stats.turretColor;
+        this.turretSpeed = stats.turretSpeed;
+    }
+
+    update() {
+        if (this.isDead) return;
+
+        if (Date.now() - this.lastDmgTime > 10000 && this.armor < this.maxArmor) {
+            this.armor += 10 / 60;
+            if (this.armor > this.maxArmor) this.armor = this.maxArmor;
+        }
+
+        for (let obs of obstacles) {
+            let dist = Math.hypot(obs.x - this.x, obs.y - this.y);
+            if (dist < this.radius + obs.radius) {
+                let pushAngle = Math.atan2(this.y - obs.y, this.x - obs.x);
+                this.x = obs.x + Math.cos(pushAngle) * (this.radius + obs.radius);
+                this.y = obs.y + Math.sin(pushAngle) * (this.radius + obs.radius);
+            }
+        }
+
+        for (let t of tanks) {
+            if (t !== this && !t.isDead) {
+                let dist = Math.hypot(t.x - this.x, t.y - this.y);
+                if (dist < this.radius + t.radius) {
+                    let overlap = (this.radius + t.radius) - dist;
+                    let pushAngle = Math.atan2(this.y - t.y, this.x - t.x);
+                    
+                    if (this.tierLevel < t.tierLevel) {
+                        this.x += Math.cos(pushAngle) * overlap;
+                        this.y += Math.sin(pushAngle) * overlap;
+                    } else if (this.tierLevel === t.tierLevel) {
+                        this.x += Math.cos(pushAngle) * (overlap / 2);
+                        this.y += Math.sin(pushAngle) * (overlap / 2);
+                    }
+                }
+            }
+        }
+
+        this.x = Math.max(50, Math.min(WORLD_WIDTH - 50, this.x));
+        this.y = Math.max(50, Math.min(WORLD_HEIGHT - 50, this.y));
+
+        if (this.isPlayer) return;
+
+        const enemyBase = bases.find(b => b.faction !== this.faction);
+        const enemies = tanks.filter(t => t.faction !== this.faction && !t.isDead);
+        
+        let closestEnemy = null;
+        let minDist = Infinity;
+        for (let e of enemies) {
+            let dist = Math.hypot(e.x - this.x, e.y - this.y);
+            if (dist < minDist) { minDist = dist; closestEnemy = e; }
+        }
+
+        if (this.ammo <= 0) {
+            if (closestEnemy) {
+                let angleToEnemy = Math.atan2(closestEnemy.y - this.y, closestEnemy.x - this.x);
+                this.angle = angleToEnemy;
+                this.turretAngle = angleToEnemy;
+                this.x += Math.cos(this.angle) * (this.speed * 1.1);
+                this.y += Math.sin(this.angle) * (this.speed * 1.1);
+            }
+            return;
+        }
+
+        if (this.hp < 35 || this.armor <= 0) {
+            if (!this.retreating) {
+                this.retreating = true;
+                let baseX = this.faction === 'GER' ? 500 : WORLD_WIDTH - 500;
+                this.safeTargetX = baseX + (Math.random() - 0.5) * 600;
+                this.safeTargetY = WORLD_HEIGHT / 2 + (Math.random() - 0.5) * 1200;
+            }
+        } else if (this.armor >= this.maxArmor && this.hp >= 95) {
+            this.retreating = false;
+        }
+
+        let targetAngle = this.angle;
+        let desiredTurretAngle = this.turretAngle;
+
+        if (this.retreating) {
+            targetAngle = Math.atan2(this.safeTargetY - this.y, this.safeTargetX - this.x);
+            desiredTurretAngle = targetAngle;
+            this.angle = targetAngle;
+            this.x += Math.cos(this.angle) * this.speed;
+            this.y += Math.sin(this.angle) * this.speed;
+
+            if (Math.hypot(this.safeTargetX - this.x, this.safeTargetY - this.y) < 50) {
+                this.hp = Math.min(this.maxHp, this.hp + 0.3);
+                this.armor = Math.min(this.maxArmor, this.armor + 0.3);
+                if (this.hp >= this.maxHp && this.armor >= this.maxArmor) this.retreating = false;
+            }
+        } else if (closestEnemy && minDist <= this.range) {
+            desiredTurretAngle = Math.atan2(closestEnemy.y - this.y, closestEnemy.x - this.x);
+            let angleDiff = Math.atan2(Math.sin(desiredTurretAngle - this.turretAngle), Math.cos(desiredTurretAngle - this.turretAngle));
+            this.turretAngle += Math.sign(angleDiff) * Math.min(this.turretSpeed, Math.abs(angleDiff));
+
+            let blocked = isPathBlocked(this.x, this.y, closestEnemy.x, closestEnemy.y);
+            if (!blocked && Math.abs(angleDiff) < 0.4 && Date.now() - this.lastShotTime > this.shootCooldown) {
+                bullets.push(new Bullet(this.x, this.y, this.turretAngle, this.faction, this));
+                this.ammo--;
+                this.lastShotTime = Date.now();
+                this.shootCooldown = this.reloadTime + Math.random() * 1000;
+            }
+
+            if (minDist > this.range * 0.7 && !blocked) {
+                targetAngle = desiredTurretAngle;
+                this.angle = targetAngle;
+                this.x += Math.cos(this.angle) * this.speed;
+                this.y += Math.sin(this.angle) * this.speed;
+            }
+        } else if (closestEnemy) {
+            targetAngle = Math.atan2(closestEnemy.y - this.y, closestEnemy.x - this.x);
+            desiredTurretAngle = targetAngle;
+            this.angle = targetAngle;
+            this.x += Math.cos(this.angle) * this.speed;
+            this.y += Math.sin(this.angle) * this.speed;
+        } else {
+            targetAngle = Math.atan2(enemyBase.y - this.y, enemyBase.x - this.x);
+            desiredTurretAngle = targetAngle;
+            this.angle = targetAngle;
+            this.x += Math.cos(this.angle) * this.speed;
+            this.y += Math.sin(this.angle) * this.speed;
+        }
+
+        let turretDiff = Math.atan2(Math.sin(desiredTurretAngle - this.turretAngle), Math.cos(desiredTurretAngle - this.turretAngle));
+        this.turretAngle += Math.sign(turretDiff) * Math.min(this.turretSpeed, Math.abs(turretDiff));
+    }
+
+    draw() {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+
+        if (this.isDead) {
+            ctx.fillStyle = '#111';
+            ctx.beginPath();
+            ctx.rect(-18, -12, 36, 24);
+            ctx.fill();
+            ctx.fillStyle = Math.random() > 0.5 ? 'orange' : 'red';
+            ctx.beginPath();
+            ctx.arc((Math.random() - 0.5) * 15, (Math.random() - 0.5) * 15, 8 + Math.random() * 8, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+            return;
+        }
+
+        ctx.rotate(this.angle);
+
+        if (this.tier === 'tier1') {
+            ctx.fillStyle = '#1c1c1c';
+            ctx.fillRect(-this.radius*1.1, -this.radius*0.8, this.radius*2.2, 5);
+            ctx.fillRect(-this.radius*1.1, this.radius*0.8 - 5, this.radius*2.2, 5);
+            ctx.fillStyle = this.color;
+            ctx.fillRect(-this.radius*0.9, -this.radius*0.6, this.radius*1.8, this.radius*1.2);
+        } else if (this.tier === 'tier2') {
+            ctx.fillStyle = '#111';
+            ctx.fillRect(-this.radius*1.2, -this.radius*0.95, this.radius*2.4, 7);
+            ctx.fillRect(-this.radius*1.2, this.radius*0.95 - 7, this.radius*2.4, 7);
+            ctx.fillStyle = this.color;
+            ctx.beginPath();
+            ctx.moveTo(-this.radius, -this.radius*0.7);
+            ctx.lineTo(this.radius*1.1, -this.radius*0.5);
+            ctx.lineTo(this.radius*1.1, this.radius*0.5);
+            ctx.lineTo(-this.radius, this.radius*0.7);
+            ctx.closePath();
+            ctx.fill();
+        } else {
+            ctx.fillStyle = '#0a0a0a';
+            ctx.fillRect(-this.radius*1.3, -this.radius*1.0, this.radius*2.6, 9);
+            ctx.fillRect(-this.radius*1.3, this.radius*1.0 - 9, this.radius*2.6, 9);
+            ctx.fillStyle = this.color;
+            ctx.fillRect(-this.radius*1.1, -this.radius*0.85, this.radius*2.2, this.radius*1.7);
+            ctx.fillStyle = '#222';
+            ctx.fillRect(-this.radius*0.4, -this.radius*0.6, this.radius*0.8, this.radius*1.2);
+        }
+        ctx.restore();
+
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.turretAngle);
+        ctx.fillStyle = this.turretColor;
+        
+        let barrelLen = this.tier === 'tier3' ? 36 : (this.tier === 'tier2' ? 30 : 22);
+        ctx.fillRect(0, -4, barrelLen, 8);
+        
+        ctx.beginPath();
+        let turretSize = this.tier === 'tier3' ? 16 : (this.tier === 'tier2' ? 13 : 10);
+        if (this.tier === 'tier2') {
+            ctx.rect(-turretSize, -turretSize*0.8, turretSize*1.8, turretSize*1.6);
+        } else {
+            ctx.arc(0, 0, turretSize, 0, Math.PI * 2);
+        }
+        ctx.fill();
+        ctx.restore();
+
+        if (!this.isPlayer) {
+            ctx.fillStyle = 'red';
+            ctx.fillRect(this.x - 20, this.y - 32, 40, 5);
+            ctx.fillStyle = 'lime';
+            ctx.fillRect(this.x - 20, this.y - 32, 40 * (this.hp / this.maxHp), 5);
+            ctx.fillStyle = 'blue';
+            ctx.fillRect(this.x - 20, this.y - 38, 40 * (this.armor / this.maxArmor), 4);
+        }
+    }
+}
+<script>
+class Bullet {
+    constructor(x, y, angle, faction, shooter) {
+        this.x = x;
+        this.y = y;
+        this.angle = angle;
+        this.faction = faction;
+        this.shooter = shooter;
+        this.speed = 10;
+        this.range = shooter.range;
+        this.distanceTraveled = 0;
+        this.dmg = shooter.dmg;
+    }
+
+    update() {
+        let dx = Math.cos(this.angle) * this.speed;
+        let dy = Math.sin(this.angle) * this.speed;
+        this.x += dx;
+        this.y += dy;
+        this.distanceTraveled += this.speed;
+
+        for (let obs of obstacles) {
+            if (Math.hypot(obs.x - this.x, obs.y - this.y) < obs.radius) return true;
+        }
+
+        const enemyBase = bases.find(b => b.faction !== this.faction);
+        if (Math.abs(enemyBase.x - this.x) < enemyBase.width/2 && Math.abs(enemyBase.y - this.y) < enemyBase.height/2) {
+            enemyBase.hp -= this.dmg;
+            if (enemyBase.faction === 'USSR' && !ussrReinforcementsTriggered && enemyBase.hp < enemyBase.maxHp) {
+                ussrReinforcementsTriggered = true;
+                let ussrBase = bases[1];
+                let currentUSSR = tanks.filter(t => t.faction === 'USSR' && !t.isDead).length;
+                let neededUSSR = 35 - currentUSSR;
+                for (let i = 0; i < neededUSSR; i++) {
+                    tanks.push(new Tank('USSR', false, ussrBase.x + (Math.random()-0.5)*(ussrBase.width-40), ussrBase.y + (Math.random()-0.5)*(ussrBase.height-40), 'tier1'));
+                }
+                let gerTanks = tanks.filter(t => t.faction === 'GER' && !t.isDead && !t.isPlayer);
+                while (gerTanks.length > 19) {
+                    let victim = gerTanks.pop();
+                    victim.isDead = true;
+                }
+            }
+
+            if (enemyBase.hp <= 0) { alert(this.faction + " Won the Battle!"); location.reload(); }
+            return true;
+        }
+
+        for (let t of tanks) {
+            if (t.faction !== this.faction && !t.isDead) {
+                if (Math.hypot(t.x - this.x, t.y - this.y) < t.radius) {
+                    t.lastDmgTime = Date.now();
+                    if (t.armor > 0) {
+                        t.armor -= this.dmg;
+                        if (t.armor < 0) { t.hp += t.armor; t.armor = 0; }
+                    } else {
+                        t.hp -= this.dmg;
+                    }
+
+                    if (t.hp <= 0) {
+                        t.isDead = true;
+                        if (this.faction === 'GER') gerScore++; else ussrScore++;
+                        if (this.shooter.isPlayer) {
+                            playerKills++;
+                            updateTankMenuUI();
+                        }
+                        setTimeout(() => t.respawn(), 5000);
+                    }
+                    return true;
+                }
+            }
+        }
+        if (this.distanceTraveled >= this.range) return true;
+        return false;
+    }
+
+    draw() {
+        ctx.fillStyle = 'yellow';
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, 4, 0, Math.PI * 2);
+        ctx.fill();
+    }
+}
+
+function initFaction(faction) {
+    playerFaction = faction;
+    playerTankModel = 'tier1';
+    playerKills = 0;
+    document.getElementById('menu').style.display = 'none';
+    document.getElementById('settingsBtn').style.display = 'flex';
+    setupGame();
+    gameStarted = true;
+    setupJoysticks();
+    updateTankMenuUI();
+}
+
+function toggleTankMenu(show) {
+    document.getElementById('tankMenu').style.display = show ? 'flex' : 'none';
+    if(show) updateTankMenuUI();
+}
+
+function updateTankMenuUI() {
+    const list = document.getElementById('tankOptionsList');
+    list.innerHTML = '';
+    
+    let t2Req = playerFaction === 'GER' ? 2 : 2;
+    let t3Req = playerFaction === 'GER' ? 5 : 6;
+
+    const tiers = [
+        { id: 'tier1', name: tankSpecs[playerFaction].tier1.name, req: 0 },
+        { id: 'tier2', name: tankSpecs[playerFaction].tier2.name, req: t2Req },
+        { id: 'tier3', name: tankSpecs[playerFaction].tier3.name, req: t3Req }
+    ];
+
+    tiers.forEach(t => {
+        let unlocked = playerKills >= t.req;
+        let btn = document.createElement('button');
+        btn.className = `btn ${playerFaction === 'GER' ? 'btn-ger' : 'btn-ussr'} ${!unlocked ? 'locked' : ''}`;
+        btn.innerHTML = `${t.name} ${unlocked ? (playerTankModel === t.id ? ' (Active)' : '') : ` (Req: ${t.req} Kills)`}`;
+        if (unlocked) {
+            btn.onclick = () => {
+                playerTankModel = t.id;
+                let player = tanks.find(tk => tk.isPlayer);
+                if (player) {
+                    player.tier = t.id;
+                    player.updateStats(tankSpecs[playerFaction][t.id]);
+                    player.hp = player.maxHp;
+                    player.armor = player.maxArmor;
+                }
+                updateTankMenuUI();
+            };
+        }
+        list.appendChild(btn);
+    });
+}
+
+function setupGame() {
+    bases.push(new Base(300, WORLD_HEIGHT / 2, 'GER'));
+    bases.push(new Base(WORLD_WIDTH - 300, WORLD_HEIGHT / 2, 'USSR'));
+
+    for (let i = 0; i < 40; i++) {
+        obstacles.push(new Obstacle(
+            600 + Math.random() * (WORLD_WIDTH - 1200),
+            200 + Math.random() * (WORLD_HEIGHT - 400),
+            30 + Math.random() * 40,
+            Math.random() > 0.5 ? 'rock' : 'tree'
+        ));
+    }
+
+    let gerBase = bases[0];
+    let ussrBase = bases[1];
+
+    let gerCount = playerFaction === 'GER' ? 24 : 25;
+    let ussrCount = playerFaction === 'USSR' ? 14 : 15;
+
+    tanks.push(new Tank(playerFaction, true, playerFaction === 'GER' ? gerBase.x : ussrBase.x, WORLD_HEIGHT / 2, 'tier1'));
+
+    for (let i = 0; i < gerCount; i++) {
+        tanks.push(new Tank('GER', false, gerBase.x + (Math.random()-0.5)*(gerBase.width-40), gerBase.y + (Math.random()-0.5)*(gerBase.height-40), 'tier1'));
+    }
+    for (let i = 0; i < ussrCount; i++) {
+        tanks.push(new Tank('USSR', false, ussrBase.x + (Math.random()-0.5)*(ussrBase.width-40), ussrBase.y + (Math.random()-0.5)*(ussrBase.height-40), 'tier1'));
+    }
+}
+
+let leftJoy = { active: false, x: 0, y: 0, origX: 0, origY: 0, vecX: 0, vecY: 0 };
+let rightJoy = { active: false, x: 0, y: 0, origX: 0, origY: 0, vecX: 0, vecY: 0 };
+
+function setupJoysticks() {
+    const lElem = document.getElementById('leftJoystick');
+    const rElem = document.getElementById('rightJoystick');
+    const fireElem = document.getElementById('fireBtn');
+    lElem.style.display = 'block';
+    rElem.style.display = 'block';
+    fireElem.style.display = 'flex';
+
+    window.addEventListener('pointerdown', e => {
+        if (e.target.id === 'fireBtn') { firePressed = true; return; }
+        if (e.clientX < window.innerWidth / 2) {
+            leftJoy.active = true;
+            leftJoy.origX = e.clientX; leftJoy.origY = e.clientY;
+            lElem.style.left = (e.clientX - 60) + 'px'; lElem.style.top = (e.clientY - 60) + 'px';
+        } else {
+            rightJoy.active = true;
+            rightJoy.origX = e.clientX; rightJoy.origY = e.clientY;
+            rElem.style.left = (e.clientX - 60) + 'px'; rElem.style.top = (e.clientY - 60) + 'px';
+        }
+    });
+
+    window.addEventListener('pointermove', e => {
+        if (leftJoy.active && e.clientX < window.innerWidth / 2) {
+            let dx = e.clientX - leftJoy.origX, dy = e.clientY - leftJoy.origY, dist = Math.hypot(dx, dy), maxDist = 50;
+            if (dist > maxDist) { dx = (dx/dist) * maxDist; dy = (dy/dist) * maxDist; }
+            document.getElementById('leftKnob').style.transform = `translate(${dx}px, ${dy}px)`;
+            leftJoy.vecX = dx / maxDist; leftJoy.vecY = dy / maxDist;
+        }
+        if (rightJoy.active && e.clientX >= window.innerWidth / 2) {
+            let dx = e.clientX - rightJoy.origX, dy = e.clientY - rightJoy.origY, dist = Math.hypot(dx, dy), maxDist = 50;
+            if (dist > maxDist) { dx = (dx/dist) * maxDist; dy = (dy/dist) * maxDist; }
+            document.getElementById('rightKnob').style.transform = `translate(${dx}px, ${dy}px)`;
+            rightJoy.vecX = dx / maxDist; rightJoy.vecY = dy / maxDist;
+        }
+    });
+
+    window.addEventListener('pointerup', e => {
+        if (e.target.id === 'fireBtn') { firePressed = false; return; }
+        if (e.clientX < window.innerWidth / 2) {
+            leftJoy.active = false; leftJoy.vecX = 0; leftJoy.vecY = 0;
+            document.getElementById('leftKnob').style.transform = `translate(0px, 0px)`;
+        } else {
+            rightJoy.active = false; rightJoy.vecX = 0; rightJoy.vecY = 0;
+            document.getElementById('rightKnob').style.transform = `translate(0px, 0px)`;
+        }
+    });
+}
+
+function loop() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (gameStarted) {
+        let player = tanks.find(t => t.isPlayer);
+        
+        if (player) {
+            if (player.isDead) {
+                player.hp = 0;
+                setTimeout(() => { if(player.isDead) player.respawn(); }, 5000);
+            } else {
+                if (leftJoy.active) {
+                    player.angle = Math.atan2(leftJoy.vecY, leftJoy.vecX);
+                    player.x += leftJoy.vecX * player.speed;
+                    player.y += leftJoy.vecY * player.speed;
+                }
+                if (rightJoy.active) {
+                    let targetTurret = Math.atan2(rightJoy.vecY, rightJoy.vecX);
+                    let diff = Math.atan2(Math.sin(targetTurret - player.turretAngle), Math.cos(targetTurret - player.turretAngle));
+                    player.turretAngle += Math.sign(diff) * Math.min(player.turretSpeed, Math.abs(diff));
+                }
+                if (firePressed) {
+                    if (player.ammo > 0 && Date.now() - player.lastShotTime > player.reloadTime) {
+                        bullets.push(new Bullet(player.x, player.y, player.turretAngle, player.faction, player));
+                        player.ammo--;
+                        player.lastShotTime = Date.now();
+                    }
+                }
+            }
+
+            player.x = Math.max(50, Math.min(WORLD_WIDTH - 50, player.x));
+            player.y = Math.max(50, Math.min(WORLD_HEIGHT - 50, player.y));
+
+            camera.x = player.x - canvas.width / 2;
+            camera.y = player.y - canvas.height / 2;
+
+            document.getElementById('gerScore').innerText = gerScore;
+            document.getElementById('ussrScore').innerText = ussrScore;
+            document.getElementById('gerBaseHp').innerText = Math.max(0, Math.floor(bases[0].hp));
+            document.getElementById('ussrBaseHp').innerText = Math.max(0, Math.floor(bases[1].hp));
+            document.getElementById('playerStats').innerText = `Tank: ${player.name} | HP: ${Math.floor(player.hp)} | Armor: ${Math.floor(player.armor)} | Ammo: ${player.ammo} | Kills: ${playerKills}`;
+        }
+
+        ctx.save();
+        ctx.translate(-camera.x, -camera.y);
+
+        ctx.fillStyle = '#3a473a';
+        ctx.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+        ctx.strokeStyle = '#2f3d2f';
+        ctx.lineWidth = 40;
+        ctx.strokeRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+
+        obstacles.forEach(obs => obs.draw());
+        bases.forEach(b => b.draw());
+        
+        tanks.forEach(t => { t.update(); t.draw(); });
+
+        bullets = bullets.filter(b => {
+            let dead = b.update();
+            if (!dead) b.draw();
+            return !dead;
+        });
+
+        ctx.restore();
+    }
+    requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+</body>
+</html>
