@@ -1,9 +1,22 @@
 {
-  "name": "EASTERN FRONT",
+  "name": "Eastern front Tank Warfare",
   "short_name": "WWII",
   "start_url": "./index.html",
+  "scope": "./",
   "display": "fullscreen",
+  "orientation": "landscape",
   "background_color": "#2b2b2b",
   "theme_color": "#2b2b2b",
-  "icons": []
+  "icons": [
+    {
+      "src": "https://via.placeholder.com/192.png?text=Tank",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://via.placeholder.com/512.png?text=Tank",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
 }
